@@ -321,13 +321,13 @@ public:
 
         // Grant both PvP-kill credit NPCs ("Slay Them All" Horde 13180 needs
         // 31086; Alliance counterparts 13177/13179 need 39019) to the killer and
-        // to nearby same-team allies in the WG zone. KilledMonsterCredit on a
+        // to nearby war participants on both teams. KilledMonsterCredit on a
         // quest the player does not hold is a no-op, so handing out both IDs
         // safely covers crossfaction players whose held quest does not match
-        // their assigned team.
+        // their assigned team (see #145).
         //
-        // We deliberately do NOT gate on PlayersInWar: the daily must advance
-        // for kills in the WG zone even when no active war is running.
+        // Crediting the killer is NOT gated on PlayersInWar: the daily must
+        // advance for kills in the WG zone even when no active war is running.
         TeamId killerTeam = killer->GetTeamId();
         uint32 coreCredit  = (killerTeam == TEAM_HORDE) ? WG_NPC_QUEST_PVP_KILL_ALLIANCE
                                                         : WG_NPC_QUEST_PVP_KILL_HORDE;
@@ -352,17 +352,22 @@ public:
         // war is running and PlayersInWar is empty.
         grantTo(killer);
 
-        // Propagate assist credit to nearby same-team allies in the zone.
-        bf->ForEachPlayerInZone([&](Player* p)
+        // FFA assist credit to nearby war participants on both teams (#145):
+        // covers flipped players on the opposite team whose original-faction
+        // quest needs the other credit NPC. No-op outside of an active war
+        // when PlayersInWar is empty.
+        for (uint8 team = 0; team < PVP_TEAMS_COUNT; ++team)
         {
-            if (!p || p == killer)
-                return;
-            if (p->GetTeamId() != killerTeam)
-                return;
-            if (p->GetDistance2d(killer) >= 40.0f)
-                return;
-            grantTo(p);
-        });
+            for (ObjectGuid const& guid : bf->GetPlayersInWarSet(TeamId(team)))
+            {
+                Player* p = ObjectAccessor::FindPlayer(guid);
+                if (!p || p == killer)
+                    continue;
+                if (p->GetDistance2d(killer) >= 40.0f)
+                    continue;
+                grantTo(p);
+            }
+        }
     }
 
     void OnBattlefieldWarEnd(Battlefield* bf, bool /*endByTimer*/) override
